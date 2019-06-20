@@ -21,7 +21,7 @@ OBJ = $(addprefix $(OBJDIR)/,$(addsuffix .o,$(basename $(SRC))))
 # The following preprocessor, compiler and linker flags, may be overridden by
 # customization makefiles.
 CPPFLAGS =
-CXXFLAGS =
+CXXFLAGS = -std=c++17
 LDFLAGS =
 
 # Pull in any makefile customizations in current directory.
