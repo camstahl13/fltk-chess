@@ -5,11 +5,14 @@
 #include <vector>
 #include <map>
 #include <utility>
-#include "chess_gameplay.h"
 
 using namespace std;
 
 enum class Piece_type {Rook, Bishop, Knight, Queen, King, Pawn, None};
+
+vector<Piece_type> all_piece_types {Piece_type::Pawn, Piece_type::Knight, Piece_type::Bishop, Piece_type::Rook, Piece_type::King, Piece_type::Queen};
+
+vector<Piece_type> all_but_queen {all_piece_types.begin(),--all_piece_types.end()};
 
 enum class Team {white, black};
 
@@ -20,6 +23,8 @@ Team operator!(Team t) {
 struct Coordinate;
 
 using Delta = Coordinate;
+
+using Path_type = Piece_type;
 
 struct Coordinate {
 	int row;
@@ -38,6 +43,17 @@ struct Coordinate {
 	bool on_board() {
 		return (row >= 0 && row <= 7 && col >= 0 && col <= 7);
 	}
+	vector<Coordinate> get_adjacents() {
+		vector<Coordinate> to_return;
+		for (int r = -1; r <= 1; ++r) {
+			for (int c = -1; c <= 1; ++c) {
+				if (not (r == 0 && c == 0)) {
+					to_return.push_back(Coordinate{row + r, col + c});
+				}
+			}
+		}
+		return to_return;
+	}
 	Coordinate(int abscissa = 0, int ordinate = 0) {
 		row = abscissa;
 		col = ordinate;
@@ -49,12 +65,6 @@ struct Coordinate {
 	Delta operator-(Coordinate c) {
 		return Delta{(row - c.row), (col - c.col)};
 	}
-};
-
-struct Search_path {
-	Delta d;
-	int cnt;
-	vector<Piece_type> pts;
 };
 
 const vector<Delta> pawn_barred_if_opp {Delta{1, 0}, Delta{2, 0}};
@@ -77,6 +87,13 @@ using Path = vector<Coordinate>;
 | | | | | | | |
 | | | | | | | |
 */
+
+template <typename element>
+vector<element> combine(const vector<element>& v1, const vector<element>& v2) {
+	vector<element> vr = v2;
+	vr.insert(vr.begin(), v1.begin(), v1.end());
+	return vr;
+}
 
 struct Piece {
 	Coordinate position;
@@ -110,7 +127,7 @@ struct Piece {
 		return path;
 	}
 	bool path_valid(Path);
-	bool result_valid();
+	bool result_valid(bool);
 	virtual Path delta_valid(Delta move) = 0;
 	Piece(Coordinate pos, Team tm, Piece_type t, const vector<Delta>* b_i_o = &others_barred_if_opp, const vector<Delta>* b_i_n_o = &others_barred_if_not_opp) 
 		:position{pos}, team{tm}, type{t}, barred_if_opp{b_i_o}, barred_if_not_opp{b_i_n_o} {}
@@ -246,42 +263,48 @@ struct Board {
 		}
 
 	}
-	Path in_check(Team tm) {
-		Coordinate king = (tm == Team::black ? black_king : white_king);
-		int forward = (tm == Team::black ? 1 : -1);
-		vector<Search_path> sps = { { {forward, 1}, 1, {Piece_type::Pawn} },
-			                    { {forward, -1}, 1, {Piece_type::Pawn} },
-					    { {1, 1}, 7, {Piece_type::Queen, Piece_type::Bishop} },
-					    { {1, -1}, 7, {Piece_type::Queen, Piece_type::Bishop} },
-					    { {-1, 1}, 7, {Piece_type::Queen, Piece_type::Bishop} },
-					    { {-1, -1}, 7, {Piece_type::Queen, Piece_type::Bishop} },
-					    { {1, 0}, 7, {Piece_type::Queen, Piece_type::Rook} },
-					    { {-1, 0}, 7, {Piece_type::Queen, Piece_type::Rook} },
-					    { {0, 1}, 7, {Piece_type::Queen, Piece_type::Rook} },
-					    { {0, -1}, 7, {Piece_type::Queen, Piece_type::Rook} },
-					    { {1, 2}, 1, {Piece_type::Knight} },
-					    { {2, 1}, 1, {Piece_type::Knight} },
-					    { {-1, 2}, 1, {Piece_type::Knight} },
-					    { {-2, 1}, 1, {Piece_type::Knight} },
-					    { {1, -2}, 1, {Piece_type::Knight} },
-					    { {2, -1}, 1, {Piece_type::Knight} },
-					    { {-1, -2}, 1, {Piece_type::Knight} },
-					    { {-2, -1}, 1, {Piece_type::Knight} } };
-		for (sp : sps) {
-			int cnt = sp.cnt;
-			Path return_path {king};
-			for (Coordinate coord = (king + sp.d);
-			     cnt > 0 && coord.on_board();
-			     coord += sp.d, cnt--) {
-				Piece* occupant = board[coord.row][coord.col];
-				return_path.push_back(coord);
-				if (occupant && occupant->team != tm && any_of(sp.pts.begin(), sp.pts.end(),
-						                               [&occupant](Piece_type pt) { return pt == occupant->type; })) {
-					return return_path;
+	Coordinate get_king(Team tm) {
+		return (tm == Team::black ? black_king : white_king);
+	}
+	Path search_path(Path_type path_type, Coordinate search_from, Team mover_team, bool finding_threat, bool need_path);
+	Path is_threatened(Team threatening, Coordinate threatened_coord, bool need_path) {
+		Path p;
+		for (Piece_type pt : all_but_queen) {
+			p = search_path(pt, threatened_coord, threatening, true, need_path);
+			if (!p.empty()) {
+				return p;
+			}
+		}
+		return p;
+	}
+	bool checkmate_check(Team threatened) {
+		Coordinate king = get_king(threatened);
+		if (none_of(check_lane.begin(), check_lane.end(), [&](Coordinate c) { return !is_threatened(threatened, c, false).empty(); })) {
+			Piece* save = board[king.row][king.col];
+			board[king.row][king.col] = nullptr;
+			vector<Coordinate> adjacents = king.get_adjacents();
+			if (all_of(adjacents.begin(), adjacents.end(), [&](Coordinate c) { return !is_threatened(!threatened, c, false).empty(); })) {
+				board[king.row][king.col] = save;
+				return true;
+			}
+			board[king.row][king.col] = save;
+		}
+		return false;
+	}
+	bool stalemate_check(Team threatened) {
+		for (int row = 0; row <= 7; ++row) {
+			for (int col = 0; col <= 7; ++col) {
+				Piece* piece = board[row][col];
+				if (piece && piece->team == threatened) {
+					for (Piece_type pt : all_piece_types) {
+						if (!search_path(pt, Coordinate(row,col), threatened, false, false).empty()) {
+							return false;
+						}
+					}
 				}
 			}
 		}
-		return Path{};
+		return true;
 	}
 	pair<Piece*, bool> move(Coordinate c1, Coordinate c2) {
 		Piece* to_move = board[c1.row][c1.col];
@@ -297,11 +320,12 @@ struct Board {
 		return make_pair(to_return, old_has_moved);
 	}
 	void undo_move(Coordinate c1, Coordinate c2, Piece* replace_piece, bool replace_has_moved) {
-		if (replace_piece && replace_piece->type == Piece_type::King) {
-			(replace_piece->team == Team::black) ? black_king = c1 : white_king = c1;
+		Piece* moved_piece = board[c2.row][c2.col];
+		if (moved_piece && moved_piece->type == Piece_type::King) {
+			(moved_piece->team == Team::black) ? black_king = c1 : white_king = c1;
 		}
 		//change has_moved here! MAYBE!
-		board[c1.row][c1.col] = board[c2.row][c2.col];
+		board[c1.row][c1.col] = moved_piece;
 		board[c1.row][c1.col]->position = c1;
 		board[c1.row][c1.col]->has_moved = replace_has_moved;
 		board[c2.row][c2.col] = replace_piece;
