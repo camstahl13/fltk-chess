@@ -117,6 +117,7 @@ struct Piece {
 	Path path_to(Coordinate destination) {
 		int row_inc = ((destination.row - position.row) == 0 ? 0 : ((destination.row - position.row) / abs(destination.row - position.row)));
 		int col_inc = ((destination.col - position.col) == 0 ? 0 : ((destination.col - position.col) / abs(destination.col - position.col)));
+		// Change to sgn function above.
 		Path path;
 		for (int prow = position.row + row_inc, pcol = position.col + col_inc, cnt = 1; 
 			cnt <= abs(destination.row - position.row); 
@@ -141,6 +142,7 @@ struct Pawn : public Piece {
 			if (destination.on_board() && ((d_t.row == 1 && d_t.col == 0)
 						        || (d_t.row == 1 && abs(d_t.col) == 1) 
 						        || (d_t.row == 2 && d_t.col == 0 && (not has_moved)))) {
+				// Return full path here.
 				return Path{destination};
 			} else {
 				return Path{};
@@ -209,22 +211,7 @@ struct King: public Piece {
 		}
 };
 
-Piece* create_piece(Piece_type pt, Coordinate pos, Team tm) {
-	switch (pt) {
-		case Piece_type::Rook:
-			return new Rook(pos, tm);
-		case Piece_type::Bishop:
-			return new Bishop(pos, tm);
-		case Piece_type::Knight:
-			return new Knight(pos, tm);
-		case Piece_type::Queen:
-			return new Queen(pos, tm);
-		case Piece_type::King:
-			return new King(pos, tm);
-		case Piece_type::Pawn:
-			return new Pawn(pos, tm);
-	}
-}
+Piece* create_piece(Piece_type, Coordinate, Team);
 
 struct Board {
 	vector<vector<Piece*>> board;

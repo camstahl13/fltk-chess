@@ -6,13 +6,132 @@
 #include <fstream>
 #include <unistd.h> // isatty
 #include "chess_classes.h"
+#include "draw.h"
 
 using namespace std;
 
 Board B;
 
+class Board_Window : public Fl_Window {
+	public:
+		Board_Window():Fl_Window(400,400,"Chess") {}
+		void draw() override {
+			for (int row = 0; row <= 7; ++row) {
+				for (int col = 0; col <= 7; ++col) {
+					fl_color( ((row+col)%2) == 0 ? 60 : 32 );
+					fl_rectf((row+1)*50,(col+1)*50,50,50);
+				}
+			}
+		}
+};
+
+Fl_Window* W = new Board_Window();
+
+Coordinate from;
+
+Coordinate to;
+
+bool handling = false;
+
 string text(Team t, bool cap = true) {
 	return (t == Team::white ? (cap ? "White" : "white") : (cap ? "Black" : "black"));
+}
+
+string check_type(Piece_type pt) {
+	switch (pt) {
+		case Piece_type::Knight:
+			cout << "Knight";
+			break;
+		case Piece_type::Bishop:
+			cout << "Bishop";
+			break;
+		case Piece_type::Queen:
+			cout << "Queen";
+			break;
+		case Piece_type::King:
+			cout << "King";
+			break;
+		case Piece_type::Pawn:
+			cout << "Pawn";
+			break;
+		case Piece_type::Rook:
+			cout << "Rook";
+			break;
+	}
+}
+
+
+map<int, map<int, Fl_PNG_Image*>> test_pngs = {  { 1, {{2, (new Fl_PNG_Image("./Black_Pawn.png"))}} }  };
+
+map<Team, map<Piece_type, Fl_PNG_Image*>> piece_pngs {  { Team::black, {{Piece_type::Pawn, new Fl_PNG_Image("./Black_Pawn.png")},
+																							{Piece_type::Knight, new Fl_PNG_Image("./Black_Knight.png")},
+																							{Piece_type::Bishop, new Fl_PNG_Image("./Black_Bishop.png")},
+																							{Piece_type::Rook, new Fl_PNG_Image("./Black_Rook.png")},
+																							{Piece_type::Queen, new Fl_PNG_Image("./Black_Queen.png")},
+																							{Piece_type::King, new Fl_PNG_Image("./Black_King.png")}} },
+																			{ Team::white, {{Piece_type::Pawn, new Fl_PNG_Image("./White_Pawn.png")},
+																							{Piece_type::Knight, new Fl_PNG_Image("./White_Knight.png")},
+																							{Piece_type::Bishop, new Fl_PNG_Image("./White_Bishop.png")},
+																							{Piece_type::Rook, new Fl_PNG_Image("./White_Rook.png")},
+																							{Piece_type::Queen, new Fl_PNG_Image("./White_Queen.png")},
+																							{Piece_type::King, new Fl_PNG_Image("./White_King.png")}} }  };
+
+//map<Piece_type, Fl_PNG_Image*> test = piece_pngs[Team::black];
+
+class Fl_Piece : public Fl_Box {
+	public:
+		Fl_Piece(Piece* p):Fl_Box(p->position.row * 50, p->position.col * 50, 50, 50), piece(p) { 
+			cout << text(p->team);
+			cout << check_type(p->type);
+			image(
+					piece_pngs[p->team][p->type]
+				 ); 
+		}
+	private:
+		Piece* piece;
+		int x;
+		int y;
+		//bool following_mouse = false;
+		int handle(int event) override {
+			if (handling) {
+				switch (event) {
+					case FL_PUSH:
+						//following_mouse = true;
+						return 1;
+					case FL_DRAG:
+						//if (following_mouse) {
+						position(Fl::event_x(), Fl::event_y());
+						//}
+						return 1;
+					case FL_RELEASE:
+						//following_mouse = false;
+						from = Coordinate(piece->position);
+						to = Coordinate(x%50,y%50);
+						handling = false;
+						return 1;
+				}
+			}
+		}
+};
+
+Piece* create_piece(Piece_type pt, Coordinate pos, Team tm) {
+	Piece* p;
+	switch (pt) {
+		case Piece_type::Rook:
+			p = new Rook(pos, tm);
+		case Piece_type::Bishop:
+			p = new Bishop(pos, tm);
+		case Piece_type::Knight:
+			p = new Knight(pos, tm);
+		case Piece_type::Queen:
+			p = new Queen(pos, tm);
+		case Piece_type::King:
+			p = new King(pos, tm);
+		case Piece_type::Pawn:
+			p = new Pawn(pos, tm);
+	}
+	W->add(new Fl_Piece(p));
+	return p;
 }
 
 Path Board::search_path(Path_type path_type, Coordinate search_from, Team mover_team, bool finding_threat, bool need_path) {
@@ -25,6 +144,7 @@ Path Board::search_path(Path_type path_type, Coordinate search_from, Team mover_
 			{
 			int forward = (mover_team == Team::black ? 1 : -1);
 			vd = {{forward,0},{forward*2,0},{forward,-1},{forward,1}};
+			// Remove {forward*2,0} and make count conditional.
 			count = 1;
 			break;
 			}
@@ -176,6 +296,8 @@ int main() {
 	regex rx("\\(([0-7]),([0-7])\\) -> \\(([0-7]),([0-7])\\)");
 	smatch match;
 	bool repeat = false;
+	Board_Window* window = new Board_Window();
+	//window->end();
 	do {
 		B.display();
 		do {
