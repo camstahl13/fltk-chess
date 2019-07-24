@@ -321,7 +321,7 @@ int Fl_Piece::handle(int event) {
 			position(newx, newy);
 			//cout << "About to call redraw() from within Fl_Piece's handle method.\n";
 			//std::this_thread::sleep_for(std::chrono::seconds(1));
-			draw();
+			redraw();
 			//cout << "Finished call to redraw() from within Fl_Piece's handle method.\n";
 			//std::this_thread::sleep_for(std::chrono::seconds(1));
 			oldx = newx;
