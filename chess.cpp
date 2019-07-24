@@ -1,43 +1,142 @@
 #include <iostream>
+#include <stdlib.h>
 #include <algorithm>
 #include <string>
 #include <regex>
 #include <type_traits>
 #include <fstream>
 #include <unistd.h> // isatty
+#include <thread>
 #include "chess_classes.h"
 #include "draw.h"
 
 using namespace std;
 
-Board B;
-
-class Board_Window : public Fl_Window {
-	public:
-		Board_Window():Fl_Window(400,400,"Chess") {}
-		void draw() override {
-			for (int row = 0; row <= 7; ++row) {
-				for (int col = 0; col <= 7; ++col) {
-					fl_color( ((row+col)%2) == 0 ? 60 : 32 );
-					fl_rectf((row+1)*50,(col+1)*50,50,50);
-				}
-			}
-		}
-};
-
-Fl_Window* W = new Board_Window();
-
 Coordinate from;
 
 Coordinate to;
 
-bool handling = false;
+Team turn = Team::white;
+
+map<int, map<int, Fl_PNG_Image*>> test_pngs = {  { 1, {{2, (new Fl_PNG_Image("./Black_Pawn.png"))}} }  };
+
+map<Team, map<Piece_type, Fl_PNG_Image*>> piece_pngs {  { Team::black, {{Piece_type::Pawn, new Fl_PNG_Image("./Black_Pawn.png")},
+																		{Piece_type::Knight, new Fl_PNG_Image("./Black_Knight.png")},
+																		{Piece_type::Bishop, new Fl_PNG_Image("./Black_Bishop.png")},
+																		{Piece_type::Rook, new Fl_PNG_Image("./Black_Rook.png")},
+																		{Piece_type::Queen, new Fl_PNG_Image("./Black_Queen.png")},
+																		{Piece_type::King, new Fl_PNG_Image("./Black_King.png")}} },
+														{ Team::white, {{Piece_type::Pawn, new Fl_PNG_Image("./White_Pawn.png")},
+																		{Piece_type::Knight, new Fl_PNG_Image("./White_Knight.png")},
+																		{Piece_type::Bishop, new Fl_PNG_Image("./White_Bishop.png")},
+																		{Piece_type::Rook, new Fl_PNG_Image("./White_Rook.png")},
+																		{Piece_type::Queen, new Fl_PNG_Image("./White_Queen.png")},
+																		{Piece_type::King, new Fl_PNG_Image("./White_King.png")}} }  };
+
+//map<Piece_type, Fl_PNG_Image*> test = piece_pngs[Team::black];
+
+class Fl_Piece : public Fl_Box {
+	public:
+		Fl_Piece(Piece* p):Fl_Box(p->position.col * 55, p->position.row * 55, 55, 55), piece(p) { 
+			//cout << text(p->team);
+			//cout << check_type(p->type);
+			image(
+					piece_pngs[p->team][p->type]
+				 ); 
+			color(0xff000000);
+		}
+		Piece* piece;
+	private:
+		int deltax = 0;
+		int deltay = 0;
+		//bool following_mouse = false;
+		int handle(int event) override;};
+
+int cntr = 0;
+
+class Board_Window : public Fl_Window {
+	public:
+		Board_Window():Fl_Window(440,440,"Chess") {}
+		Fl_Piece* moving = nullptr;
+		vector<Coordinate> damaged {};
+		void draw() override {
+			cntr++;
+			cout << "\nJust entered Board_Window's draw function. " << cntr << "\n";
+			if (moving) {
+				cout << "fl_not_clipped returned " << ( fl_not_clipped(moving->x(),moving->y(),moving->w(),moving->h()) ? "true.\n" : "false.\n" );
+			}
+			int cnt = 0;
+			for (int row = 0; row <= 7 && cnt < damaged.size(); ++row) {
+				for (int col = 0; col <= 7 && cnt < damaged.size(); ++col) {
+					if ((not moving) || (damaged[cnt] == Coordinate(row,col))) {
+						fl_color( Fl_Color(((row+col)%2) == 0 ? 60 : 38) );
+						fl_rectf(row*55,col*55,55,55);
+						++cnt;
+					}
+				}
+			}
+			if (moving) {
+				int cnt = 0;
+				Fl_Widget * const * end = array() + children();
+				for (Fl_Widget* const * flw = array(); flw < end; ++flw) {
+					if (damaged[cnt] == ((Fl_Piece*)moving)->piece->position) { ++cnt; }
+					if (damaged[cnt] == ((Fl_Piece*)(*flw))->piece->position) {
+						(*flw)->redraw();
+						++cnt;
+						if (cnt == damaged.size()) {
+							break;
+						}
+					}
+				}
+			} else {
+				draw_children();
+			}
+			/*
+			cout << "About to call draw_children() from within Board_Window's draw function.\n";
+			draw_children();
+			cout << "Just finished calling draw_children() from within Board_Window's draw function.\n";
+			cout << "Exiting Board_Window's draw function.\n";
+			*/
+		}
+};
+
+Board_Window* W = new Board_Window();
+
+Piece* create_piece(Piece_type pt, Coordinate pos, Team tm) {
+	Piece* p;
+	switch (pt) {
+		case Piece_type::Rook:
+			p = new Rook(pos, tm);
+			break;
+		case Piece_type::Bishop:
+			p = new Bishop(pos, tm);
+			break;
+		case Piece_type::Knight:
+			p = new Knight(pos, tm);
+			break;
+		case Piece_type::Queen:
+			p = new Queen(pos, tm);
+			break;
+		case Piece_type::King:
+			p = new King(pos, tm);
+			break;
+		case Piece_type::Pawn:
+			p = new Pawn(pos, tm);
+			break;
+	}
+	Fl_Piece* flp = new Fl_Piece(p);
+	flp->show();
+	W->add(flp);
+	return p;
+}
+
+Board B;
 
 string text(Team t, bool cap = true) {
 	return (t == Team::white ? (cap ? "White" : "white") : (cap ? "Black" : "black"));
 }
 
-string check_type(Piece_type pt) {
+/*string check_type(Piece_type pt) {
 	switch (pt) {
 		case Piece_type::Knight:
 			cout << "Knight";
@@ -58,81 +157,9 @@ string check_type(Piece_type pt) {
 			cout << "Rook";
 			break;
 	}
-}
+}*/
 
 
-map<int, map<int, Fl_PNG_Image*>> test_pngs = {  { 1, {{2, (new Fl_PNG_Image("./Black_Pawn.png"))}} }  };
-
-map<Team, map<Piece_type, Fl_PNG_Image*>> piece_pngs {  { Team::black, {{Piece_type::Pawn, new Fl_PNG_Image("./Black_Pawn.png")},
-																							{Piece_type::Knight, new Fl_PNG_Image("./Black_Knight.png")},
-																							{Piece_type::Bishop, new Fl_PNG_Image("./Black_Bishop.png")},
-																							{Piece_type::Rook, new Fl_PNG_Image("./Black_Rook.png")},
-																							{Piece_type::Queen, new Fl_PNG_Image("./Black_Queen.png")},
-																							{Piece_type::King, new Fl_PNG_Image("./Black_King.png")}} },
-																			{ Team::white, {{Piece_type::Pawn, new Fl_PNG_Image("./White_Pawn.png")},
-																							{Piece_type::Knight, new Fl_PNG_Image("./White_Knight.png")},
-																							{Piece_type::Bishop, new Fl_PNG_Image("./White_Bishop.png")},
-																							{Piece_type::Rook, new Fl_PNG_Image("./White_Rook.png")},
-																							{Piece_type::Queen, new Fl_PNG_Image("./White_Queen.png")},
-																							{Piece_type::King, new Fl_PNG_Image("./White_King.png")}} }  };
-
-//map<Piece_type, Fl_PNG_Image*> test = piece_pngs[Team::black];
-
-class Fl_Piece : public Fl_Box {
-	public:
-		Fl_Piece(Piece* p):Fl_Box(p->position.row * 50, p->position.col * 50, 50, 50), piece(p) { 
-			cout << text(p->team);
-			cout << check_type(p->type);
-			image(
-					piece_pngs[p->team][p->type]
-				 ); 
-		}
-	private:
-		Piece* piece;
-		int x;
-		int y;
-		//bool following_mouse = false;
-		int handle(int event) override {
-			if (handling) {
-				switch (event) {
-					case FL_PUSH:
-						//following_mouse = true;
-						return 1;
-					case FL_DRAG:
-						//if (following_mouse) {
-						position(Fl::event_x(), Fl::event_y());
-						//}
-						return 1;
-					case FL_RELEASE:
-						//following_mouse = false;
-						from = Coordinate(piece->position);
-						to = Coordinate(x%50,y%50);
-						handling = false;
-						return 1;
-				}
-			}
-		}
-};
-
-Piece* create_piece(Piece_type pt, Coordinate pos, Team tm) {
-	Piece* p;
-	switch (pt) {
-		case Piece_type::Rook:
-			p = new Rook(pos, tm);
-		case Piece_type::Bishop:
-			p = new Bishop(pos, tm);
-		case Piece_type::Knight:
-			p = new Knight(pos, tm);
-		case Piece_type::Queen:
-			p = new Queen(pos, tm);
-		case Piece_type::King:
-			p = new King(pos, tm);
-		case Piece_type::Pawn:
-			p = new Pawn(pos, tm);
-	}
-	W->add(new Fl_Piece(p));
-	return p;
-}
 
 Path Board::search_path(Path_type path_type, Coordinate search_from, Team mover_team, bool finding_threat, bool need_path) {
 	int count;
@@ -290,61 +317,58 @@ retry:
 	return cin;
 }
 
-int main() {
-	Team turn = Team::white;
-	string user_input;
-	regex rx("\\(([0-7]),([0-7])\\) -> \\(([0-7]),([0-7])\\)");
-	smatch match;
-	bool repeat = false;
-	Board_Window* window = new Board_Window();
-	//window->end();
-	do {
-		B.display();
-		do {
-			if (repeat) {
-				cout << "Invalid move. Still ";
+int Fl_Piece::handle(int event) {
+	switch (event) {
+		case FL_PUSH:
+			deltax = Fl::event_x() - x();
+			deltay = Fl::event_y() - y();
+			W->moving = this;
+			return 1;
+		case FL_DRAG:
+			W->damaged = { {x()/55,y()/55}, {(x()+54)/55,y()/55}, {(x()+54)/55,(y()+54)/55}, {(x()+54)/55,(y()+54)/55} };
+			//remove(W->damaged.begin(), W->damaged.end(), piece->position);
+			position(Fl::event_x() - deltax, Fl::event_y() - deltay);
+			cout << "About to call redraw() from within Fl_Piece's handle method.\n";
+			redraw();
+			cout << "Finished call to redraw() from within Fl_Piece's handle method.\n";
+			return 1;
+		case FL_RELEASE:
+			from = Coordinate(piece->position);
+			to = Coordinate(Fl::event_x()%55,Fl::event_y()%55);
+			Piece* piece = B.get_at(from);
+			Piece* dest = B.get_at(to);
+			Path r_d_v = piece->delta_valid(to);
+			if (piece && piece->team == turn && !r_d_v.empty() && piece->path_valid(r_d_v)) {
+				pair<Piece*, bool> r_m = B.move(from, to);
+				if (piece->result_valid(true)) {
+					int centerx = (x() + w()) / 2;
+					int centery = (y() + h()) / 2;
+					position((centerx/55)*55,(centery/55)*55);
+					turn = !turn;
+				} else {
+					position(from.row*55,from.col*55);
+					B.undo_move(from, to, r_m.first, r_m.second);
+					return 1;
+				}
 			}
-			cout << text(turn) << "'s turn:\n";
-			if (!my_getline(user_input)) {
-				cout << "Input stream terminated.";
-				return 1;
-			}
-		} while (!regex_match(user_input, match, rx));
-		Coordinate from {extract(1, match), extract(2, match)};
-		Coordinate to {extract(3, match), extract(4, match)};
-		Piece* piece = B.get_at(from);
-		Piece* dest = B.get_at(to);
-		//cout << "from = (" << from.row << "," << from.col << ")\n";
-		Path r_d_v = piece->delta_valid(to);
-		if (piece && piece->team == turn && !r_d_v.empty() && piece->path_valid(r_d_v)) {
-			pair<Piece*, bool> r_m = B.move(from, to);
-			if (piece->result_valid(true)) {
-				turn = !turn;
-				repeat = false;
-			} else {
-				B.undo_move(from, to, r_m.first, r_m.second);
-				repeat = true;
-			}
-		} else {
-			repeat = true;
-		}
-		cout << "check_lane = {";
-		for (el : B.check_lane) {
-			cout << " {" << el.row << "," << el.col << "}";
-		}
-		cout << " }\n";
-		if (B.check_lane.empty()) {
-			if (B.stalemate_check(!turn)) {
-				cout << "You've reached a stalemate. No one wins (or loses).";
-				return 0;
-			}
-		} else {
-			if (B.checkmate_check(!turn)) {
+			if (B.check_lane.empty()) {
+				if (B.stalemate_check(!turn)) {
+					cout << "You've reached a stalemate. No one wins (or loses).";
+					return 0;
+				}
+			} else if (B.checkmate_check(!turn)) {
 				cout << "Checkmate. " << text(turn) << " wins.";
 				return 0;
+			} else {
+				return 1;
 			}
-		}
-	} while (true);
+	}
+}
+
+int main(int argc, const char* argv[]) {
+	W->end();
+	W->show();
+	Fl::run();
 }
 
 // vim:ts=4:sw=4:noet
