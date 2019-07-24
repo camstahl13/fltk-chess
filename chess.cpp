@@ -10,6 +10,9 @@
 #include "chess_classes.h"
 #include "draw.h"
 
+#include <thread>
+#include <chrono>
+
 using namespace std;
 
 Coordinate from;
@@ -66,37 +69,18 @@ class Board_Window : public Fl_Window {
 				cout << "fl_not_clipped returned " << ( fl_not_clipped(moving->x(),moving->y(),moving->w(),moving->h()) ? "true.\n" : "false.\n" );
 			}
 			int cnt = 0;
-			for (int row = 0; row <= 7 && cnt < damaged.size(); ++row) {
-				for (int col = 0; col <= 7 && cnt < damaged.size(); ++col) {
-					if ((not moving) || (damaged[cnt] == Coordinate(row,col))) {
-						fl_color( Fl_Color(((row+col)%2) == 0 ? 60 : 38) );
-						fl_rectf(row*55,col*55,55,55);
-						++cnt;
-					}
+			for (int row = 0; row <= 7 /*&& cnt < damaged.size()*/; ++row) {
+				for (int col = 0; col <= 7 /*&& cnt < damaged.size()*/; ++col) {
+					fl_color( Fl_Color(((row+col)%2) == 0 ? 60 : 38) );
+					fl_rectf(row*55,col*55,55,55);
+					++cnt;
 				}
 			}
-			if (moving) {
-				int cnt = 0;
-				Fl_Widget * const * end = array() + children();
-				for (Fl_Widget* const * flw = array(); flw < end; ++flw) {
-					if (damaged[cnt] == ((Fl_Piece*)moving)->piece->position) { ++cnt; }
-					if (damaged[cnt] == ((Fl_Piece*)(*flw))->piece->position) {
-						(*flw)->redraw();
-						++cnt;
-						if (cnt == damaged.size()) {
-							break;
-						}
-					}
-				}
-			} else {
-				draw_children();
-			}
-			/*
 			cout << "About to call draw_children() from within Board_Window's draw function.\n";
+			//std::this_thread::sleep_for(std::chrono::seconds(1));
 			draw_children();
-			cout << "Just finished calling draw_children() from within Board_Window's draw function.\n";
-			cout << "Exiting Board_Window's draw function.\n";
-			*/
+			cout << "Back from draw_children() from within Board_Window's draw function.\n";
+			//std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
 };
 
@@ -318,6 +302,8 @@ retry:
 }
 
 int Fl_Piece::handle(int event) {
+	static int oldx, oldy;
+	int newx, newy;
 	switch (event) {
 		case FL_PUSH:
 			deltax = Fl::event_x() - x();
@@ -325,12 +311,21 @@ int Fl_Piece::handle(int event) {
 			W->moving = this;
 			return 1;
 		case FL_DRAG:
-			W->damaged = { {x()/55,y()/55}, {(x()+54)/55,y()/55}, {(x()+54)/55,(y()+54)/55}, {(x()+54)/55,(y()+54)/55} };
+			//W->damaged = { {x()/55,y()/55}, {(x()+54)/55,y()/55}, {(x()+54)/55,(y()+54)/55}, {(x()+54)/55,(y()+54)/55} };
 			//remove(W->damaged.begin(), W->damaged.end(), piece->position);
-			position(Fl::event_x() - deltax, Fl::event_y() - deltay);
-			cout << "About to call redraw() from within Fl_Piece's handle method.\n";
-			redraw();
-			cout << "Finished call to redraw() from within Fl_Piece's handle method.\n";
+			// BPS: Damage the board...
+			newx = Fl::event_x() - deltax;
+			newy = Fl::event_y() - deltay;
+			W->damage(FL_DAMAGE_ALL, newx, newy, 55, 55);
+			W->damage(FL_DAMAGE_ALL, oldx, oldy, 55, 55);
+			position(newx, newy);
+			//cout << "About to call redraw() from within Fl_Piece's handle method.\n";
+			//std::this_thread::sleep_for(std::chrono::seconds(1));
+			draw();
+			//cout << "Finished call to redraw() from within Fl_Piece's handle method.\n";
+			//std::this_thread::sleep_for(std::chrono::seconds(1));
+			oldx = newx;
+			oldy = newy;
 			return 1;
 		case FL_RELEASE:
 			from = Coordinate(piece->position);
