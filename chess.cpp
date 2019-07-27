@@ -63,11 +63,48 @@ class Board_Window : public Fl_Window {
 		void draw() override {
 			for (int row = 0; row <= 7; ++row) {
 				for (int col = 0; col <= 7; ++col) {
-					fl_color( Fl_Color(((row+col)%2) == 0 ? 60 : 38) );
-					fl_rectf(row*55,col*55,55,55);
+					if (fl_not_clipped(row*55, col*55, 55, 55)) {
+						cout << "Drawing square @ " << row*55 << ", " << col*55 << endl;
+						fl_color( Fl_Color(((row+col)%2) == 0 ? 60 : 38) );
+						fl_rectf(row*55,col*55,55,55);
+					}
 				}
 			}
+#define CFG_DRAW_CHILDREN
+#ifdef CFG_DRAW_CHILDREN
 			draw_children();
+#else
+			Fl_Widget *const*a = array();
+#undef CFG_CHECK_DAMAGE_CHILD
+#ifdef CFG_CHECK_DAMAGE_CHILD
+			if (damage() == FL_DAMAGE_CHILD) { // only redraw some children
+				cout << "-- FL_DAMAGE_CHILD --" << endl;
+				for (int i = children(); i --; a ++) {
+					cout << "\tChild damaged: (" << (unsigned)(*a)->damage() << ")" << *a << endl;
+					update_child(**a);
+				}
+			} else { // total redraw
+#endif
+				cout << "-- TOTAL REDRAW --" << endl;
+				// now draw all the children atop the background:
+				for (int i = children(); i --; a ++) {
+					int xs = (*a)->x(), ys = (*a)->y(), ws = (*a)->w(), hs = (*a)->h();
+					cout << *a << " - nc=" << fl_not_clipped(xs, ys, ws, hs) << endl;
+					if (fl_not_clipped(xs, ys, ws, hs)) {
+						int xi, yi, wi, hi;
+						int status = fl_clip_box(xs, ys, ws, hs, xi, yi, wi, hi);
+						cout << "fl_clip_box: " << (status ? "partial" : "   full") << 
+							" damage=" << (unsigned)(*a)->damage() << " orig=(" <<
+							xs << "," << ys << "," << ws << "," << hs << ") -- " <<
+							"intersect=(" << xi << "," << yi << "," << wi << "," << hi << ")" << endl;
+
+						draw_child(**a);
+					}
+				}
+#ifdef CFG_CHECK_DAMAGE_CHILD
+			}
+#endif
+#endif
 		}
 };
 
@@ -289,7 +326,7 @@ retry:
 }
 
 int Fl_Piece::handle(int event) {
-	int newx, newy;
+	int newx, newy, oldx, oldy;
 	switch (event) {
 		case FL_PUSH:
 			deltax = Fl::event_x() - x();
@@ -299,9 +336,17 @@ int Fl_Piece::handle(int event) {
 		case FL_DRAG:
 			newx = Fl::event_x() - deltax;
 			newy = Fl::event_y() - deltay;
+			oldx = x();
+			oldy = y();
 			position(newx, newy);
+			cout << "FL_DRAG @ (" << newx << "," << newy << ")" << endl;
+#undef CFG_DAMAGE
+#ifdef CFG_DAMAGE
 			W->damage(FL_DAMAGE_ALL, newx, newy, 55, 55);
-			W->damage(FL_DAMAGE_ALL, x(), y(), 55, 55);
+			W->damage(FL_DAMAGE_ALL, oldx, oldy, 55, 55);
+#else
+			redraw();
+#endif
 			return 1;
 		case FL_RELEASE:
 			from = Coordinate(piece->position);
