@@ -55,6 +55,84 @@ class Fl_Piece : public Fl_Box {
 		//bool following_mouse = false;
 		int handle(int event) override;};
 
+#ifdef something_not_defined
+// Simplified and commented FLTK methods for easy reference only.
+//
+// This is the draw() you get if you don't override.
+void Fl_Group::draw() {
+	// Note: FL_DAMAGE_CHILD bit indicates that one of the group's children
+	// (recursively) has been damaged. If the group itself has been damaged, at
+	// least one other bit will be set (e.g., FL_DAMAGE_ALL). This test ensures
+	// we don't draw the group's box/label unnecessarily.
+	if (damage() & ~FL_DAMAGE_CHILD) { // redraw the entire thing:
+		draw_box();
+		draw_label();
+	}
+	draw_children();
+}
+
+void Fl_Group::draw_child(Fl_Widget& widget) const {
+
+	// If the child is visible, not a window and not clipped, invoke child's
+	// draw() method with FL_DAMAGE_ALL bit (and only FL_DAMAGE_ALL bit) set,
+	// clearing all damage flags after the draw completes.
+	// Important Note: Unlike update_child(), this method doesn't care whether
+	// damage bits are set when it's called.
+	if (widget.visible() && widget.type() < FL_WINDOW &&
+		fl_not_clipped(widget.x(), widget.y(), widget.w(), widget.h())) {
+		widget.clear_damage(FL_DAMAGE_ALL);
+		widget.draw();
+		widget.clear_damage();
+	}
+}
+
+void Fl_Group::update_child(Fl_Widget& widget) const {
+	// If the widget is damaged, visible, not a window and not clipped, invoke
+	// its draw() method, clearing damage bits after draw completes.
+	if (widget.damage() && widget.visible() && widget.type() < FL_WINDOW &&
+		fl_not_clipped(widget.x(), widget.y(), widget.w(), widget.h())) {
+		widget.draw();
+		widget.clear_damage();
+	}
+}
+
+void Fl_Group::draw_children()
+{
+	if (damage() & ~FL_DAMAGE_CHILD) { // redraw the entire thing:
+		// Something other than FL_DAMAGE_CHILD bit is set. This means we may
+		// need to redraw children that don't have damage bits set. For
+		// instance, if damage(d, x, y, w, h) is invoked on a group/window
+		// containing children, FL_DAMAGE_CHILD will not be set in any of the
+		// children that fall within x,y,w,h, but we will definitely need to
+		// redraw them. To ensure this happens, we call draw_child(), which
+		// considers only clipping region and actually sets FL_DAMAGE_ALL on the
+		// child before invoking child's draw().
+		for (int i=children_; i--;) {
+			Fl_Widget& o = **a++;
+			draw_child(o);
+			draw_outside_label(o);
+		}
+	} else {	// only redraw the children that need it:
+		// Only FL_DAMAGE_CHILD bit was set. This means we're here only because
+		// one or more descendant widgets were damaged. They know who they are,
+		// so just call update_child(), which invokes draw() only on children
+		// that have damage bits set and lie within the clipping region.
+		for (int i=children_; i--;) update_child(**a++);
+	}
+}
+#endif
+
+// Define this to use draw_children() rather than loop over children.
+#define CFG_DRAW_CHILDREN
+// Define this to show the intersection of a child with the current clipping
+// region.
+// Note: N/A if not looping over children.
+#undef CFG_SHOW_CLIP_INTERSECT
+// Define this to use redraw() on child in lieu of damage(FL_DAMAGE_ALL,x,y,w,h)
+// on the child's previous and current location inside drag handler.
+#undef CFG_USE_REDRAW
+static int cntr = 0;
+
 class Board_Window : public Fl_Window {
 	public:
 		Board_Window():Fl_Window(440,440,"Chess") {}
@@ -70,40 +148,31 @@ class Board_Window : public Fl_Window {
 					}
 				}
 			}
-#define CFG_DRAW_CHILDREN
+			cout << "-- BOARD REDRAW -- (" << ++cntr << ")" << " damage()=" << (unsigned)damage() <<  endl;
 #ifdef CFG_DRAW_CHILDREN
 			draw_children();
 #else
 			Fl_Widget *const*a = array();
-#undef CFG_CHECK_DAMAGE_CHILD
-#ifdef CFG_CHECK_DAMAGE_CHILD
-			if (damage() == FL_DAMAGE_CHILD) { // only redraw some children
-				cout << "-- FL_DAMAGE_CHILD --" << endl;
-				for (int i = children(); i --; a ++) {
-					cout << "\tChild damaged: (" << (unsigned)(*a)->damage() << ")" << *a << endl;
-					update_child(**a);
-				}
-			} else { // total redraw
+			// now draw all the children atop the background:
+			for (int i = children(); i --; a ++) {
+				cout << "Child damage() = " << (unsigned)(*a)->damage() << endl;
+				// Cache this child's rectangle.
+				int xs = (*a)->x(), ys = (*a)->y(), ws = (*a)->w(), hs = (*a)->h();
+				// Is the child in the clipping region?
+				if (fl_not_clipped(xs, ys, ws, hs)) {
+#ifdef CFG_SHOW_CLIP_INTERSECT
+					// Determine the intersection of this child with clipping region.
+					int xi, yi, wi, hi;
+					int status = fl_clip_box(xs, ys, ws, hs, xi, yi, wi, hi);
+					cout << "fl_clip_box: " << (status ? "partial" : "   full") << 
+						" damage=" << (unsigned)(*a)->damage() << " orig=(" <<
+						xs << "," << ys << "," << ws << "," << hs << ") -- " <<
+						"intersect=(" << xi << "," << yi << "," << wi << "," << hi << ")" << endl;
 #endif
-				cout << "-- TOTAL REDRAW --" << endl;
-				// now draw all the children atop the background:
-				for (int i = children(); i --; a ++) {
-					int xs = (*a)->x(), ys = (*a)->y(), ws = (*a)->w(), hs = (*a)->h();
-					cout << *a << " - nc=" << fl_not_clipped(xs, ys, ws, hs) << endl;
-					if (fl_not_clipped(xs, ys, ws, hs)) {
-						int xi, yi, wi, hi;
-						int status = fl_clip_box(xs, ys, ws, hs, xi, yi, wi, hi);
-						cout << "fl_clip_box: " << (status ? "partial" : "   full") << 
-							" damage=" << (unsigned)(*a)->damage() << " orig=(" <<
-							xs << "," << ys << "," << ws << "," << hs << ") -- " <<
-							"intersect=(" << xi << "," << yi << "," << wi << "," << hi << ")" << endl;
 
-						draw_child(**a);
-					}
+					draw_child(**a);
 				}
-#ifdef CFG_CHECK_DAMAGE_CHILD
 			}
-#endif
 #endif
 		}
 };
@@ -340,12 +409,11 @@ int Fl_Piece::handle(int event) {
 			oldy = y();
 			position(newx, newy);
 			cout << "FL_DRAG @ (" << newx << "," << newy << ")" << endl;
-#undef CFG_DAMAGE
-#ifdef CFG_DAMAGE
+#ifdef CFG_USE_REDRAW
+			redraw();
+#else
 			W->damage(FL_DAMAGE_ALL, newx, newy, 55, 55);
 			W->damage(FL_DAMAGE_ALL, oldx, oldy, 55, 55);
-#else
-			redraw();
 #endif
 			return 1;
 		case FL_RELEASE:
