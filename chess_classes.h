@@ -120,7 +120,7 @@ struct Piece {
 		// Change to sgn function above.
 		Path path;
 		for (int prow = position.row + row_inc, pcol = position.col + col_inc, cnt = 1; 
-			cnt <= abs(destination.row - position.row); 
+			cnt <= max(abs(destination.row - position.row), abs(destination.col - position.col));
 			prow += row_inc, pcol += col_inc, cnt++) 
 		{
 			path.push_back(Coordinate{prow, pcol});

@@ -49,6 +49,8 @@ class Fl_Piece : public Fl_Box {
 	private:
 		int deltax = 0;
 		int deltay = 0;
+		int new_x = 0;
+		int new_y = 0;
 		//bool following_mouse = false;
 		int handle(int event) override;};
 
@@ -58,7 +60,9 @@ class Board_Window : public Fl_Window {
 	public:
 		Board_Window():Fl_Window(440,440,"Chess") {}
 		Fl_Piece* moving = nullptr;
-		vector<Coordinate> damaged {};
+		//vector<Coordinate> damaged {};
+		Piece* to_remove = nullptr;
+		vector<pair<Piece*, Piece*>> history; 
 		void draw() override {
 			cntr++;
 			cout << "\nJust entered Board_Window's draw function. " << cntr << "\n";
@@ -66,16 +70,27 @@ class Board_Window : public Fl_Window {
 				cout << "fl_not_clipped returned " << ( fl_not_clipped(moving->x(),moving->y(),moving->w(),moving->h()) ? "true.\n" : "false.\n" );
 			}
 			int cnt = 0;
-			for (int row = 0; row <= 7 && cnt < damaged.size(); ++row) {
-				for (int col = 0; col <= 7 && cnt < damaged.size(); ++col) {
-					if ((not moving) || (damaged[cnt] == Coordinate(row,col))) {
-						fl_color( Fl_Color(((row+col)%2) == 0 ? 60 : 38) );
-						fl_rectf(row*55,col*55,55,55);
-						++cnt;
+			for (int row = 0; row <= 7/* && cnt < damaged.size()*/; ++row) {
+				for (int col = 0; col <= 7/* && cnt < damaged.size()*/; ++col) {
+					//if ((not moving) || (damaged[cnt] == Coordinate(row,col))) {
+					fl_color( Fl_Color(((row+col)%2) == 0 ? 60 : 38) );
+					fl_rectf(row*55,col*55,55,55);
+					++cnt;
+					//}
+				}
+			}
+			Fl_Piece* c;
+			if (to_remove) {
+				for (cnt = 0; cnt < children(); ++cnt) {
+					c = (Fl_Piece*)child(cnt);
+					if (c->piece == to_remove) {
+						c->hide();
+						remove(cnt);
+						//delete_widget(c);
 					}
 				}
 			}
-			if (moving) {
+			/*if (moving) {
 				int cnt = 0;
 				Fl_Widget * const * end = array() + children();
 				for (Fl_Widget* const * flw = array(); flw < end; ++flw) {
@@ -90,6 +105,11 @@ class Board_Window : public Fl_Window {
 				}
 			} else {
 				draw_children();
+			}
+			*/
+			draw_children();
+			if (moving) {
+				draw_child(*moving);
 			}
 			/*
 			cout << "About to call draw_children() from within Board_Window's draw function.\n";
@@ -320,49 +340,78 @@ retry:
 int Fl_Piece::handle(int event) {
 	switch (event) {
 		case FL_PUSH:
-			deltax = Fl::event_x() - x();
-			deltay = Fl::event_y() - y();
-			W->moving = this;
-			return 1;
+			if (piece && piece->team == turn) {
+				deltax = Fl::event_x() - x();
+				deltay = Fl::event_y() - y();
+				W->moving = this;
+				return 1;
+			}
+			break;
 		case FL_DRAG:
-			W->damaged = { {x()/55,y()/55}, {(x()+54)/55,y()/55}, {(x()+54)/55,(y()+54)/55}, {(x()+54)/55,(y()+54)/55} };
+			//W->damaged = { {x()/55,y()/55}, {(x()+54)/55,y()/55}, {(x()+54)/55,(y()+54)/55}, {(x()+54)/55,(y()+54)/55} };
 			//remove(W->damaged.begin(), W->damaged.end(), piece->position);
+			new_x = Fl::event_x() - deltax;
+			new_y = Fl::event_y() - deltay;
+			W->damage(FL_DAMAGE_ALL, x(), y(), 55, 55);
 			position(Fl::event_x() - deltax, Fl::event_y() - deltay);
+			W->damage(FL_DAMAGE_ALL, new_x, new_y, 55, 55);
 			cout << "About to call redraw() from within Fl_Piece's handle method.\n";
 			redraw();
 			cout << "Finished call to redraw() from within Fl_Piece's handle method.\n";
 			return 1;
 		case FL_RELEASE:
-			from = Coordinate(piece->position);
-			to = Coordinate(Fl::event_x()%55,Fl::event_y()%55);
-			Piece* piece = B.get_at(from);
+			cout << "CALLING FL_RELEASE!!\n";
+			cout << "piece->position = (" << piece->position.row << "," << piece->position.col << ")\n";
+			// BPS: Any reason to copy the object? If it's just for convenience, you could use a const Piece ref: eg,
+			//   const Piece& from = piece->position;
+			// BPS: Also, why are from/to global?
+			// BPS: Also, I wonder whether Piece and Fl_Piece need to be separate classes.
+			bool reposition = true;
+			from = piece->position;
+			to = Coordinate((y()+22.5)/55, (x()+22.5)/55);
+			//Piece* piece = B.get_at(from);
 			Piece* dest = B.get_at(to);
 			Path r_d_v = piece->delta_valid(to);
-			if (piece && piece->team == turn && !r_d_v.empty() && piece->path_valid(r_d_v)) {
+			int oldx = x();
+			int oldy = y();
+			if (!r_d_v.empty() && piece->path_valid(r_d_v)) {
+				cout << "Inside outer if.\n";
 				pair<Piece*, bool> r_m = B.move(from, to);
 				if (piece->result_valid(true)) {
-					int centerx = (x() + w()) / 2;
-					int centery = (y() + h()) / 2;
+					int centerx = x() + w() / 2;
+					int centery = y() + h() / 2;
+					cout << "x = " << x() << "; y = " << y() << "\n";
 					position((centerx/55)*55,(centery/55)*55);
+					cout << "x = " << x() << "; y = " << y() << "\n";
+					W->damage(FL_DAMAGE_ALL, oldx, oldy, 55, 55);
+					W->damage(FL_DAMAGE_ALL, x(), y(), 55, 55);
 					turn = !turn;
+					reposition = false;
+					W->to_remove = dest;
 				} else {
-					position(from.row*55,from.col*55);
 					B.undo_move(from, to, r_m.first, r_m.second);
+				}
+			}
+			if (reposition) {
+				position(from.col*55, from.row*55);
+				W->damage(FL_DAMAGE_ALL, oldx, oldy, 55, 55);
+				W->damage(FL_DAMAGE_ALL, x(), y(), 55, 55);
+				return 1;
+			} else {
+				if (B.check_lane.empty()) {
+					if (B.stalemate_check(!turn)) {
+						cout << "You've reached a stalemate. No one wins (or loses).";
+						return 0;
+					}
+				} else if (B.checkmate_check(!turn)) {
+					cout << "Checkmate. " << text(turn) << " wins.";
+					return 0;
+				} else {
 					return 1;
 				}
 			}
-			if (B.check_lane.empty()) {
-				if (B.stalemate_check(!turn)) {
-					cout << "You've reached a stalemate. No one wins (or loses).";
-					return 0;
-				}
-			} else if (B.checkmate_check(!turn)) {
-				cout << "Checkmate. " << text(turn) << " wins.";
-				return 0;
-			} else {
-				return 1;
-			}
 	}
+	return 0;
 }
 
 int main(int argc, const char* argv[]) {
