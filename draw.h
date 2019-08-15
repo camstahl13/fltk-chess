@@ -4,6 +4,8 @@
 #include <FL/Fl_Box.H>
 #include <FL/Fl_PNG_Image.H>
 #include <FL/Fl.H>
+#include <FL/Fl_Menu_Item.H>
+#include <FL/Fl_Menu_Bar.H>
 
 /*
 using namespace std;

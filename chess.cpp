@@ -37,7 +37,7 @@ map<Team, map<Piece_type, Fl_PNG_Image*>> piece_pngs {  { Team::black, {{Piece_t
 
 class Fl_Piece : public Fl_Box {
 	public:
-		Fl_Piece(Piece* p):Fl_Box(p->position.col * 55, p->position.row * 55, 55, 55), piece(p) { 
+		Fl_Piece(Piece* p):Fl_Box(p->position.col * 55, p->position.row * 55 + 30, 55, 55), piece(p) { 
 			//cout << text(p->team);
 			//cout << check_type(p->type);
 			image(
@@ -58,11 +58,22 @@ int cntr = 0;
 
 class Board_Window : public Fl_Window {
 	public:
-		Board_Window():Fl_Window(440,440,"Chess") {}
+		Fl_Menu_Bar* menu_bar;
+		Board_Window():Fl_Window(440,470,"Chess") {
+			static Fl_Menu_Item popup[] {
+				{"File", 0, 0, 0, FL_SUBMENU},
+				{"Load Game", FL_ALT+'L', ls_callback, (void*)1},
+				{"Save Game", FL_ALT+'S', ls_callback, (void*)2}
+			};
+			menu_bar = new Fl_Menu_Bar(0, 0, 440, 30);
+			menu_bar->menu(popup);
+		}
 		Fl_Piece* moving = nullptr;
 		//vector<Coordinate> damaged {};
 		Piece* to_remove = nullptr;
-		vector<pair<Piece*, Piece*>> history; 
+		//vector<pair<pair<Coordinate, Coordinate>, Piece*>> history;
+		string history;
+		static void ls_callback(Fl_Widget* flw, void* v) {;}
 		void draw() override {
 			cntr++;
 			cout << "\nJust entered Board_Window's draw function. " << cntr << "\n";
@@ -74,7 +85,7 @@ class Board_Window : public Fl_Window {
 				for (int col = 0; col <= 7/* && cnt < damaged.size()*/; ++col) {
 					//if ((not moving) || (damaged[cnt] == Coordinate(row,col))) {
 					fl_color( Fl_Color(((row+col)%2) == 0 ? 60 : 38) );
-					fl_rectf(row*55,col*55,55,55);
+					fl_rectf(col*55,row*55+30,55,55);
 					++cnt;
 					//}
 				}
@@ -151,6 +162,16 @@ Piece* create_piece(Piece_type pt, Coordinate pos, Team tm) {
 }
 
 Board B;
+
+/*
+void buttons_callback(Fl_Widget* flw, void* data) {
+	switch ((unsigned long)data) {
+		case 1:
+			B.show_text_entry(1);
+		//case 2:
+	}
+}
+*/
 
 string text(Team t, bool cap = true) {
 	return (t == Team::white ? (cap ? "White" : "white") : (cap ? "Black" : "black"));
@@ -368,7 +389,7 @@ int Fl_Piece::handle(int event) {
 			// BPS: Also, I wonder whether Piece and Fl_Piece need to be separate classes.
 			bool reposition = true;
 			from = piece->position;
-			to = Coordinate((y()+22.5)/55, (x()+22.5)/55);
+			to = Coordinate((y()-30+22.5)/55, (x()+22.5)/55);
 			//Piece* piece = B.get_at(from);
 			Piece* dest = B.get_at(to);
 			Path r_d_v = piece->delta_valid(to);
@@ -379,12 +400,18 @@ int Fl_Piece::handle(int event) {
 				pair<Piece*, bool> r_m = B.move(from, to);
 				if (piece->result_valid(true)) {
 					int centerx = x() + w() / 2;
-					int centery = y() + h() / 2;
+					int centery = y() - 30 + h() / 2;
 					cout << "x = " << x() << "; y = " << y() << "\n";
-					position((centerx/55)*55,(centery/55)*55);
+					position((centerx/55)*55,(centery/55)*55+30);
 					cout << "x = " << x() << "; y = " << y() << "\n";
 					W->damage(FL_DAMAGE_ALL, oldx, oldy, 55, 55);
 					W->damage(FL_DAMAGE_ALL, x(), y(), 55, 55);
+					//history.push_back(pair<pair<from, to>, dest>);
+					W->history += (to_string(from.row) + "\n" + to_string(from.col) + "\n"
+							       + to_string(to.row) + "\n" + to_string(to.col) + "\n")
+						       += ( piece ? (to_string(piece->position.row) + "\n" + to_string(piece->position.col) + "\n"
+										     + to_string((int)piece->team) + "\n" + to_string((int)piece->type) + "\n")
+									      : "\n" );
 					turn = !turn;
 					reposition = false;
 					W->to_remove = dest;
@@ -393,7 +420,7 @@ int Fl_Piece::handle(int event) {
 				}
 			}
 			if (reposition) {
-				position(from.col*55, from.row*55);
+				position(from.col*55, from.row*55+30);
 				W->damage(FL_DAMAGE_ALL, oldx, oldy, 55, 55);
 				W->damage(FL_DAMAGE_ALL, x(), y(), 55, 55);
 				return 1;
